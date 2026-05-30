@@ -225,22 +225,25 @@ if server_files:
                     estimated_cycle = int(len(df) / sign_changes)
                     st.success(f"⏱️ **평균 순환매 사이클**: 약 **{max(3, estimated_cycle)}일 ~ {estimated_cycle + 2}일** 내외")
 
-            # 4. 🎨 [수술 완료] 하단 원본 데이터 표 출력 (음수 영역 파스텔톤 배경색 마킹)
+            # 4. 하단 원본 데이터 표 출력
             st.write("---")
             st.subheader(f"📋 데이터 시트 ({selected_file_name})")
             
-            # 조회 및 가독성을 위한 데이터프레임 재구성 (일별 순수급과 누적수급을 함께 배치)
             display_df = df[['종가', '외인', '외인 누적수급', '기관', '기관 누적수급', '개인', '개인 누적수급']].copy()
             display_df.index = df['날짜'].dt.strftime('%Y-%m-%d')
             
-            # 💡 음수(MInus) 값인 칸에만 은은한 파스텔톤 복숭아색 배경을 칠하는 내부 스타일 함수
+            # 음수 값인 칸에 파스텔톤 복숭아색 배경을 칠하는 스타일 함수
             def color_negative_pastel(val):
                 if isinstance(val, (int, float)) and val < 0:
-                    return 'background-color: #FFECEA; color: #D32F2F; font-weight: 500;' # 파스텔 레드 배경 + 진한 빨강 글씨
+                    return 'background-color: #FFECEA; color: #D32F2F; font-weight: 500;'
                 return ''
 
-            # 최근 거래일 순서로 정렬하여 테이블 스타일 적용 최적화 후 매핑
-            styled_df = display_df.iloc[::-1].style.applymap(color_negative_pastel).format("{:,.0f}")
+            # 💡 [버전 호환 수술] 구버전(applymap)과 신버전(map) 버전을 자동 판별하여 에러를 완전히 차단
+            reversed_df = display_df.iloc[::-1]
+            if hasattr(reversed_df.style, 'map'):
+                styled_df = reversed_df.style.map(color_negative_pastel).format("{:,.0f}")
+            else:
+                styled_df = reversed_df.style.applymap(color_negative_pastel).format("{:,.0f}")
             
             st.dataframe(styled_df, use_container_width=True)
             
