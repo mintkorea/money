@@ -6,7 +6,7 @@ import os
 # 1. 페이지 기본 설정 (와이드 모드 및 타이틀)
 st.set_page_config(layout="wide", page_title="주도주 수급 & 조건식 분석기", page_icon="🚀")
 
-# 💡 [핵심 추가] 모바일과 PC 화면 크기를 감지하여 타이틀 폰트 크기를 자동 조절하는 CSS 주입
+# 💡 [오타 완벽 수정] 모바일/PC 화면 크기별 제목 폰트 자동 조절 반응형 CSS (unsafe_allow_html=True로 교정)
 st.markdown("""
     <style>
         /* 기본 PC 화면용 폰트 스타일 */
@@ -15,6 +15,7 @@ st.markdown("""
             font-weight: 800;
             line-height: 1.3;
             margin-bottom: 0.5rem;
+            color: #1E1E1E;
         }
         .responsive-subtitle {
             font-size: 1.05rem !important;
@@ -25,22 +26,21 @@ st.markdown("""
         /* 📱 모바일 화면 (화면 폭 768px 이하) 자동 반응형 대응 */
         @media (max-width: 768px) {
             .responsive-title {
-                font-size: 1.35rem !important; /* 스마트폰 환경에 맞춰 폰트 크기를 축소 */
+                font-size: 1.35rem !important; /* 스마트폰 환경에 맞춰 폰트 크기 자동 축소 */
                 font-weight: 700;
                 line-height: 1.2;
                 letter-spacing: -0.05rem;
             }
             .responsive-subtitle {
-                font-size: 0.85rem !important; /* 부제목 크기도 모바일에 맞게 최적화 */
+                font-size: 0.85rem !important;
             }
-            /* 모바일에서 여백 줄여 차트 가독성 확보 */
             .block-container {
                 padding-top: 1rem !important;
                 padding-bottom: 1rem !important;
             }
         }
     </style>
-""", unsafe_allow_index=True)
+""", unsafe_allow_html=True)
 
 # 반응형 클래스가 적용된 제목 영역
 st.markdown('<div class="responsive-title">🚀 상한가 주도주 조건식 매칭 및 수급 분석기</div>', unsafe_allow_html=True)
@@ -55,7 +55,7 @@ if not os.path.exists(SERVER_STORE_DIR):
 # 2. 사이드바 - 파일 업로드 및 서버 저장 관리
 st.sidebar.header("📂 [PC용] HTS 수급 데이터 서버 업로드")
 uploaded_files = st.sidebar.file_uploader(
-    "새로운 주도주 엑셀 자료를 서버에 등록하세요:", 
+    "새로운 주도주 엑셀/CSV 자료를 서버에 등록하세요:", 
     type=["xlsx", "csv"], 
     accept_multiple_files=True
 )
@@ -89,17 +89,23 @@ if server_files:
             st.rerun()
 
     try:
+        # 파일 로드 및 파일 타입별 엔진 최적화
         if selected_file_name.endswith('.csv'):
             try:
                 df_raw = pd.read_csv(target_file_path, encoding='utf-8')
             except UnicodeDecodeError:
                 df_raw = pd.read_csv(target_file_path, encoding='cp949')
         else:
+            # 💡 [openpyxl 에러 원천 차단] 라이브러리 부재 시 자동 예외 처리 엔진 적용
             try:
-                df_raw = pd.read_excel(target_file_path)
-            except Exception:
-                df_raw = pd.read_excel(target_file_path, engine='xlrd')
+                df_raw = pd.read_excel(target_file_path, engine='openpyxl')
+            except ImportError:
+                try:
+                    df_raw = pd.read_excel(target_file_path, engine='xlrd')
+                except:
+                    df_raw = pd.read_excel(target_file_path)
         
+        # 컬럼명 공백 제거 및 전처리
         df_raw.columns = df_raw.columns.astype(str).str.replace(' ', '').str.strip()
         raw_cols = df_raw.columns.tolist()
         
@@ -117,10 +123,11 @@ if server_files:
 
         if not all([date_col, close_col, foreign_col, inst_col, retail_col]):
             st.error(f"❌ '{selected_file_name}' 파일에서 필수 수급 데이터 컬럼을 찾을 수 없습니다.")
+            st.info(f"현재 파일 내 존재하는 컬럼 항목들: {raw_cols}")
         else:
             df = pd.DataFrame()
             
-            # [날짜 정밀 보정]
+            # 날짜 파싱 정밀 보정
             raw_date_series = df_raw[date_col]
             parsed_dates = pd.to_datetime(raw_date_series, errors='coerce')
             
@@ -168,7 +175,7 @@ if server_files:
             
             st.success(f"🌐 [서버 연동 데이터] 분석 중: **{selected_file_name}**")
             
-            # 3. 레이아웃 분할 (좌측 차트 / 우측 실시간 전략창)
+            # 레이아웃 분할 (좌측 차트 / 우측 실시간 전략창)
             col1, col2 = st.columns([1.8, 1.2])
             
             with col1:
@@ -225,7 +232,7 @@ if server_files:
             st.subheader(f"📋 데이터 시트 ({selected_file_name})")
             display_df = df[['종가', '외인', '기관', '개인']].copy()
             display_df.index = df['날짜'].dt.strftime('%Y-%m-%d')
-            st.dataframe(display_df.tail(29).style.format("{:,.0f}"))
+            st.dataframe(display_df.style.format("{:,.0f}"))
             
     except Exception as e:
         st.error(f"❌ 데이터 정제 중 오류가 발생했습니다: {e}")
