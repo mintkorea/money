@@ -225,28 +225,28 @@ if server_files:
                     estimated_cycle = int(len(df) / sign_changes)
                     st.success(f"⏱️ **평균 순환매 사이클**: 약 **{max(3, estimated_cycle)}일 ~ {estimated_cycle + 2}일** 내외")
 
-            # 4. 🛠️ [반대로 수정 완료] 하단 원본 데이터 표 출력 (양수 영역 파스텔 연두색 배경 마킹)
+            # 4. 🛠️ [수술 완료] 하단 원본 데이터 표 출력 (가두기 스크롤 완전히 해제)
             st.write("---")
             st.subheader(f"📋 데이터 시트 ({selected_file_name})")
             
             display_df = df[['종가', '외인', '외인 누적수급', '기관', '기관 누적수급', '개인', '개인 누적수급']].copy()
             display_df.index = df['날짜'].dt.strftime('%Y-%m-%d')
             
-            # 💡 [핵심 교정] 양수(Positive) 값인 칸에만 은은한 파스텔톤 연두색 배경을 칠하는 스타일 함수
+            # 양수 값인 칸에 파스텔톤 연두색 배경을 칠하는 스타일 함수
             def color_positive_pastel(val):
                 if isinstance(val, (int, float)) and val > 0:
-                    return 'background-color: #E8F5E9; color: #2E7D32; font-weight: 500;' # 파스텔 연두 배경 + 진한 초록 글씨
+                    return 'background-color: #E8F5E9; color: #2E7D32; font-weight: 500;'
                 return ''
 
-            # 버전 호환성 체크 후 스타일 결합 (최신일 역순 정렬 유지)
+            # 버전 호환성 체크 후 스타일 결합 (최신일 역순 정렬)
             reversed_df = display_df.iloc[::-1]
             if hasattr(reversed_df.style, 'map'):
                 styled_df = reversed_df.style.map(color_positive_pastel).format("{:,.0f}")
             else:
                 styled_df = reversed_df.style.applymap(color_positive_pastel).format("{:,.0f}")
             
-            # 높이 420px 고정 박스 적용
-            st.dataframe(styled_df, use_container_width=True, height=420)
+            # 💡 [교정 완료] height 옵션을 완전히 제거하여 표 전체가 무제한으로 쫙 노출되도록 변경!
+            st.dataframe(styled_df, use_container_width=True)
             
     except Exception as e:
         st.error(f"❌ 데이터 정제 중 오류가 발생했습니다: {e}")
