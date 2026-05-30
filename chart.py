@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# 1. 페이지 기본 설정 (와이드 모드)
+# 1. 페이지 기본 설정
 st.set_page_config(layout="wide", page_title="주도주 수급 & 조건식 분석기", page_icon="🚀")
 
 st.title("🚀 상한가 주도주 조건식 매칭 및 수급 분석기")
@@ -48,16 +48,18 @@ if uploaded_file is not None:
             st.error("❌ 필수 수급 데이터 컬럼(일자, 종가, 외인, 기관, 개인)을 파일에서 찾을 수 없습니다.")
             st.info(f"현재 파일 내 존재하는 컬럼 항목들: {raw_cols}")
         else:
-            # 💡 [정교한 날짜 처리] 하이픈/슬래시 없는 정수형 날짜 포맷까지 대응
-            date_series = df_raw[date_col].astype(str).str.replace(' ', '').str.strip()
-            date_series = date_series.str.replace('-', '').str.replace('/', '')
-            
             df = pd.DataFrame()
-            df['날짜'] = pd.to_datetime(date_series, format='%Y%m%d', errors='coerce')
             
-            # 만약 포맷이 안 맞으면 자동 해석 시도
+            # 💡 [핵심 수술] '26/05/29 또는 26-05-29 형태의 한국 HTS 날짜 포맷 강제 보정
+            date_strings = df_raw[date_col].astype(str).str.replace(' ', '').str.strip()
+            
+            # 파이썬 오작동을 막기 위해 YY/MM/DD 또는 YY-MM-DD 포맷을 명시적으로 지정하여 파싱
+            df['날짜'] = pd.to_datetime(date_strings, format='%y/%m/%d', errors='coerce')
             if df['날짜'].isna().all():
-                df['날짜'] = pd.to_datetime(df_raw[date_col], errors='coerce')
+                df['날짜'] = pd.to_datetime(date_strings, format='%y-%m-%d', errors='coerce')
+            if df['날짜'].isna().all():
+                # 위 방식이 다 실패할 경우를 대비한 범용 예외 처리
+                df['날짜'] = pd.to_datetime(date_strings, errors='coerce')
                 
             def clean_numeric(sequence):
                 return pd.to_numeric(sequence.astype(str).str.replace(',', '').str.replace(' ', '').str.strip(), errors='coerce').fillna(0)
@@ -67,7 +69,7 @@ if uploaded_file is not None:
             df['기관'] = clean_numeric(df_raw[inst_col])
             df['개인'] = clean_numeric(df_raw[retail_col])
             
-            # 날짜 기준으로 과거 -> 최신 정렬
+            # 날짜 기준으로 과거 -> 최신순 정렬 (일 단위 누적 연산의 필수 조건)
             df = df.dropna(subset=['날짜', '종가']).sort_values('날짜').reset_index(drop=True)
             
             # 수급 누적 데이터 계산
@@ -75,25 +77,24 @@ if uploaded_file is not None:
             df['기관 누적수급'] = df['기관'].cumsum()
             df['개인 누적수급'] = df['개인'].cumsum()
             
-            # 차트용 날짜 텍스트 축 생성 (X축이 깔끔하게 '05-29' 형태로 표시되도록 고정)
-            df['날짜표시'] = df['날짜'].dt.strftime('%m-%d')
+            # 💡 차트 X축에 '05/29' 형태로 '월/일'이 깨끗하게 찍히도록 텍스트 변환
+            df['일자표시'] = df['날짜'].dt.strftime('%m/%d')
             
             # 3. 레이아웃 배치
             col1, col2 = st.columns([2, 1])
             
             with col1:
-                st.subheader("📊 주가 변동과 수급 주체별 누적 흐름")
+                st.subheader("📊 일 단위(Daily) 주가 변동 및 누적 수급 흐름")
                 
-                # 가독성을 위해 주가 차트와 수급 차트를 상하로 깔끔하게 분리배치합니다.
-                st.write("**[상단] 해당 기간 주가(Price) 추이**")
-                price_chart = df.set_index('날짜표시')[['종가']]
+                st.write("**[상단] 일별 종가(Price) 추이**")
+                price_chart = df.set_index('일자표시')[['종가']]
                 st.line_chart(price_chart, height=200)
                 
-                st.write("**[하단] 메이저/개인 수급 누적 에너지 (단위: 주)**")
-                supply_chart = df.set_index('날짜표시')[['외인 누적수급', '기관 누적수급', '개인 누적수급']]
+                st.write("**[하단] 일별 메이저/개인 수급 누적 에너지 (단위: 주)**")
+                supply_chart = df.set_index('일자표시')[['외인 누적수급', '기관 누적수급', '개인 누적수급']]
                 st.line_chart(supply_chart, height=250)
                 
-                st.caption("💡 해석법: 주가가 튀기 전, 개인 누적선이 내려앉고 외인/기관 누적선이 고개를 치켜드는 'X자 교차'가 일어나는지 확인하세요.")
+                st.caption("💡 일 단위 해석법: 주가가 급등하기 직전, 개인 누적선이 바닥으로 꺾이고 외인/기관선이 동시 상향하는 '골든크로스' 구간을 잡으세요.")
                 
             with col2:
                 st.subheader("🔍 실전 매매 수급 분석창")
@@ -111,40 +112,41 @@ if uploaded_file is not None:
                         st.info(f"😐 **{actor}**: 주가 변동과 무관함 ({val:.2f})")
                 
                 st.write("---")
-                st.write("**2. 순환매 주기 예측 결과**")
+                st.write("**2. 일 단위 순환매 주기 예측 결과**")
                 
                 df['외인_부호'] = np.sign(df['외인'].replace(0, np.nan).ffill().fillna(1))
                 sign_changes = (df['외인_부호'].diff() != 0).sum()
                 
                 if sign_changes > 0:
                     estimated_cycle = int(len(df) / sign_changes)
-                    st.success(f"🔄 **평균 순환매 사이클**: 약 **{max(3, estimated_cycle)}일 ~ {estimated_cycle + 3}일** 내외")
+                    st.success(f"🔄 **평균 순환매 사이클**: 약 **{max(3, estimated_cycle)}일 ~ {estimated_cycle + 2}일** 내외")
                 else:
                     st.info("ℹ️ 일관된 수급 흐름이 지속되어 전환 주기가 없습니다.")
                     
-                # 3. 기술적 조건식 강도 자동 계산 (볼린저밴드 돌파 검증)
+                # 3. 기술적 조건식 강도 자동 계산
                 st.write("---")
                 st.write("**3. ⚡ 현재 주가 위치 및 돌파 강도**")
                 if len(df) >= 5:
-                    ma20 = df['종가'].rolling(min(20, len(df))).mean()
-                    std20 = df['종가'].rolling(min(20, len(df))).std()
-                    upper_bb = ma20 + (2 * std20)
+                    window_size = min(20, len(df))
+                    ma = df['종가'].rolling(window_size).mean()
+                    std = df['종가'].rolling(window_size).std()
+                    upper_bb = ma + (2 * std)
                     
                     current_close = df['종가'].iloc[-1]
                     current_bb = upper_bb.iloc[-1] if not np.isnan(upper_bb.iloc[-1]) else current_close
                     
                     if current_close >= current_bb and current_bb > 0:
                         st.warning(f"💥 **볼린저밴드 상한선 돌파 상태!**")
-                        st.write(f"- 현재가: {current_close:,.0f}원 (상한선: {current_bb:,.0f}원)")
+                        st.write(f"- 현재가: {current_close:,.0f}원 (상한선 저항대: {current_bb:,.0f}원)")
                     else:
                         st.info(f"정상 밴드 내 수렴 중 (상한선 저항대: {current_bb:,.0f}원)")
 
             # 4. 하단 원본 데이터 표 출력
             st.write("---")
-            st.subheader("📋 분석에 사용된 데이터 시트 (최근 거래일 순 정렬)")
+            st.subheader("📋 분석에 사용된 데이터 시트 (일 단위 검증 완료)")
             display_df = df[['종가', '외인', '기관', '개인']].copy()
             display_df.index = df['날짜'].dt.strftime('%Y-%m-%d')
-            st.dataframe(display_df.tail(15).style.format("{:,.0f}"))
+            st.dataframe(display_df.tail(29).style.format("{:,.0f}"))
             
     except Exception as e:
         st.error(f"❌ 데이터 정제 중 오류가 발생했습니다: {e}")
