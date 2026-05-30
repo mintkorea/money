@@ -225,7 +225,7 @@ if server_files:
                     estimated_cycle = int(len(df) / sign_changes)
                     st.success(f"⏱️ **평균 순환매 사이클**: 약 **{max(3, estimated_cycle)}일 ~ {estimated_cycle + 2}일** 내외")
 
-            # 4. 🛠️ [수술 완료] 하단 원본 데이터 표 출력 (가두기 스크롤 완전히 해제)
+          # 4. 🛠️ [이중 스크롤 박멸] 하단 원본 데이터 표 출력 (통스크롤 완전 개방)
             st.write("---")
             st.subheader(f"📋 데이터 시트 ({selected_file_name})")
             
@@ -245,7 +245,22 @@ if server_files:
             else:
                 styled_df = reversed_df.style.applymap(color_positive_pastel).format("{:,.0f}")
             
-            # 💡 [교정 완료] height 옵션을 완전히 제거하여 표 전체가 무제한으로 쫙 노출되도록 변경!
+            # 💡 [핵심 수술] 표 자체의 내부 프레임 스크롤을 완전히 무력화시키고 강제로 확장하는 CSS 주입
+            st.markdown("""
+                <style>
+                    /* 스트림릿 데이터프레임 고정 높이 컨테이너를 강제로 해제하여 통스크롤 구현 */
+                    div[data-testid="stDataFrame"] > div:nth-child(1) {
+                        height: auto !important;
+                        max-height: none !important;
+                        overflow-y: visible !important;
+                    }
+                    div[data-testid="stDataFrame"] div[role="presentation"] {
+                        overflow-y: visible !important;
+                    }
+                </style>
+            """, unsafe_allow_html=True)
+
+            # use_container_width=True로 가로폭은 꽉 채우되, height 설정을 완전히 생략하여 브라우저 스크롤과 일체화
             st.dataframe(styled_df, use_container_width=True)
             
     except Exception as e:
