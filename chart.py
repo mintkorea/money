@@ -225,72 +225,88 @@ if server_files:
                     estimated_cycle = int(len(df) / sign_changes)
                     st.success(f"⏱️ **평균 순환매 사이클**: 약 **{max(3, estimated_cycle)}일 ~ {estimated_cycle + 2}일** 내외")
 
-         # 4. 🛠️ [HTML 융단폭격] 하단 원본 데이터 표 출력 (이중 스크롤 100% 박멸)
+            # 4. 🛠️ 하단 원본 데이터 표 출력 (HTML 융단폭격으로 이중 스크롤 100% 완전 박멸)
             st.write("---")
             st.subheader(f"📋 데이터 시트 ({selected_file_name})")
             
+            # 테이블 가독성을 위해 데이터프레임 복사 및 가공 (try 블록 내부의 올바른 들여쓰기 위치 유지)
             display_df = df[['종가', '외인', '외인 누적수급', '기관', '기관 누적수급', '개인', '개인 누적수급']].copy()
             display_df.index = df['날짜'].dt.strftime('%Y-%m-%d')
             
-            # 천단위 콤마 포맷팅 변환
-            for col in display_df.columns:
-                display_df[col] = display_df[col].map(lambda x: f"{x:,.0f}")
-                
             reversed_df = display_df.iloc[::-1]
 
-            # 💡 판다스 데이터프레임을 완벽한 HTML 테이블로 변환하여 CSS와 함께 주입
+            # 웹 및 스마트폰 화면 가로폭에 100% 대응하며 이중 스크롤을 완전히 없애는 순수 HTML/CSS 마킹 스타일
             html_style = """
             <style>
-                .scroll-table {
+                .pure-scroll-table {
                     width: 100%;
                     border-collapse: collapse;
-                    font-family: sans-serif;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                     font-size: 14px;
+                    margin-top: 10px;
                 }
-                .scroll-table th {
+                .pure-scroll-table th {
                     background-color: #F8F9FA;
-                    color: #333333;
-                    padding: 10px;
-                    border-bottom: 2px solid #E2E8F0;
+                    color: #4A5568;
+                    padding: 12px 10px;
+                    border-top: 1px solid #E2E8F0;
+                    border-bottom: 2px solid #CBD5E1;
                     text-align: right;
+                    font-weight: 600;
                 }
-                .scroll-table th:first-child, .scroll-table td:first-child {
-                    text-align: center; /* 날짜 열은 가운데 정렬 */
+                .pure-scroll-table th:first-child, .pure-scroll-table td:first-child {
+                    text-align: center; /* 날짜 열 정렬 */
+                    font-weight: bold;
+                    color: #4A5568;
                 }
-                .scroll-table td {
-                    padding: 8px 10px;
+                .pure-scroll-table td {
+                    padding: 10px;
                     border-bottom: 1px solid #E2E8F0;
                     text-align: right;
                     color: #1A202C;
                 }
-                /* 양수(+) 값인 칸에 은은한 파스텔톤 연두색 배경 마킹 */
-                .pos-bg {
+                .pure-scroll-table tr:hover {
+                    background-color: #F1F5F9; /* 마우스 오버 시 가독성 효과 */
+                }
+                /* 🟢 양수(+) 매수 우위 구간 파스텔 연두색 하이라이트 */
+                .pos-green-bg {
                     background-color: #E8F5E9 !important;
-                    color: #2E7D32 !important;
-                    font-weight: 500;
+                    color: #1B5E20 !important;
+                    font-weight: 600;
                 }
             </style>
             """
 
-            # HTML 표 생성 로직
-            table_html = f'<table class="scroll-table"><thead><tr><th>날짜</th>'
+            # 동적 HTML 테이블 body 빌드
+            table_html = '<table class="pure-scroll-table"><thead><tr><th>날짜</th>'
             for col in reversed_df.columns:
                 table_html += f'<th>{col}</th>'
             table_html += '</tr></thead><tbody>'
 
-            for date, row in reversed_df.iterrows():
-                table_html += f'<tr><td>{date}</td>'
+            for date_idx, row in reversed_df.iterrows():
+                table_html += f'<tr><td>{date_idx}</td>'
                 for col in reversed_df.columns:
-                    val_str = row[col]
-                    # 원본 값이 양수인지 판단 (마이너스 부호가 없는 경우, 단 0은 제외)
-                    is_positive = '-' not in val_str and val_str != '0'
+                    val = row[col]
+                    # 수치형 변환 후 천단위 콤마 포맷팅 적용 및 양수 판단
+                    try:
+                        numeric_val = float(val)
+                        formatted_val = f"{numeric_val:,.0f}"
+                        is_positive = numeric_val > 0
+                    except:
+                        formatted_val = str(val)
+                        is_positive = False
                     
                     if is_positive:
-                        table_html += f'<td class="pos-bg">{val_str}</td>'
+                        table_html += f'<td class="pos-green-bg">{formatted_val}</td>'
                     else:
-                        table_html += f'<td>{val_str}</td>'
+                        table_html += f'<td>{formatted_val}</td>'
                 table_html += '</tr>'
             table_html += '</tbody></table>'
 
-            # 스트림릿에 순수 HTML로 렌더링 (이중 스크롤 소멸)
+            # 💥 완벽하게 이중 스크롤을 무력화하여 웹페이지 전체 통스크롤로 결합 렌더링
             st.markdown(html_style + table_html, unsafe_allow_html=True)
+            
+    except Exception as e:
+        st.error(f"❌ 데이터 정제 중 오류가 발생했습니다: {e}")
+else:
+    st.info("▲ 현재 서버 저장소에 등록된 수급 자료가 없습니다. PC HTS에서 추출한 엑셀 파일들을 사이드바에 올려 서버에 먼저 저장해 주세요.")
