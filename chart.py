@@ -6,7 +6,7 @@ import os
 # 1. 페이지 기본 설정 (와이드 모드 및 타이틀)
 st.set_page_config(layout="wide", page_title="주도주 수급 & 조건식 분석기", page_icon="🚀")
 
-# 💡 [오타 완벽 수정] 모바일/PC 화면 크기별 제목 폰트 자동 조절 반응형 CSS (unsafe_allow_html=True로 교정)
+# 모바일/PC 화면 크기별 제목 폰트 자동 조절 반응형 CSS
 st.markdown("""
     <style>
         /* 기본 PC 화면용 폰트 스타일 */
@@ -47,7 +47,7 @@ st.markdown('<div class="responsive-title">🚀 상한가 주도주 조건식 �
 st.markdown('<div class="responsive-subtitle">PC에서 등록한 엑셀 수급 자료가 서버에 동기화되어, 휴대폰에서도 실시간 조회가 가능합니다.</div>', unsafe_allow_html=True)
 st.write("---")
 
-# 💡 서버 내부 공간에 파일을 저장할 폴더 생성 로직
+# 서버 내부 공간에 파일을 저장할 폴더 생성 로직
 SERVER_STORE_DIR = "stored_stocks"
 if not os.path.exists(SERVER_STORE_DIR):
     os.makedirs(SERVER_STORE_DIR)
@@ -96,7 +96,6 @@ if server_files:
             except UnicodeDecodeError:
                 df_raw = pd.read_csv(target_file_path, encoding='cp949')
         else:
-            # 💡 [openpyxl 에러 원천 차단] 라이브러리 부재 시 자동 예외 처리 엔진 적용
             try:
                 df_raw = pd.read_excel(target_file_path, engine='openpyxl')
             except ImportError:
@@ -123,7 +122,6 @@ if server_files:
 
         if not all([date_col, close_col, foreign_col, inst_col, retail_col]):
             st.error(f"❌ '{selected_file_name}' 파일에서 필수 수급 데이터 컬럼을 찾을 수 없습니다.")
-            st.info(f"현재 파일 내 존재하는 컬럼 항목들: {raw_cols}")
         else:
             df = pd.DataFrame()
             
@@ -227,12 +225,24 @@ if server_files:
                     estimated_cycle = int(len(df) / sign_changes)
                     st.success(f"⏱️ **평균 순환매 사이클**: 약 **{max(3, estimated_cycle)}일 ~ {estimated_cycle + 2}일** 내외")
 
-            # 4. 하단 원본 데이터 표 출력
+            # 4. 🎨 [수술 완료] 하단 원본 데이터 표 출력 (음수 영역 파스텔톤 배경색 마킹)
             st.write("---")
             st.subheader(f"📋 데이터 시트 ({selected_file_name})")
-            display_df = df[['종가', '외인', '기관', '개인']].copy()
+            
+            # 조회 및 가독성을 위한 데이터프레임 재구성 (일별 순수급과 누적수급을 함께 배치)
+            display_df = df[['종가', '외인', '외인 누적수급', '기관', '기관 누적수급', '개인', '개인 누적수급']].copy()
             display_df.index = df['날짜'].dt.strftime('%Y-%m-%d')
-            st.dataframe(display_df.style.format("{:,.0f}"))
+            
+            # 💡 음수(MInus) 값인 칸에만 은은한 파스텔톤 복숭아색 배경을 칠하는 내부 스타일 함수
+            def color_negative_pastel(val):
+                if isinstance(val, (int, float)) and val < 0:
+                    return 'background-color: #FFECEA; color: #D32F2F; font-weight: 500;' # 파스텔 레드 배경 + 진한 빨강 글씨
+                return ''
+
+            # 최근 거래일 순서로 정렬하여 테이블 스타일 적용 최적화 후 매핑
+            styled_df = display_df.iloc[::-1].style.applymap(color_negative_pastel).format("{:,.0f}")
+            
+            st.dataframe(styled_df, use_container_width=True)
             
     except Exception as e:
         st.error(f"❌ 데이터 정제 중 오류가 발생했습니다: {e}")
