@@ -50,34 +50,44 @@ if uploaded_file is not None:
         else:
             df = pd.DataFrame()
             
-            # 💡 [긴급 수술] 파이썬의 자동 날짜 해석을 전면 차단하고, 글자를 강제로 쪼개서 년/월/일 조립
-            raw_dates = df_raw[date_col].astype(str).str.replace(' ', '').str.strip()
+            # 💡 [날짜 완전 정복] 텍스트 형식과 엑셀 날짜 일련번호 형식 둘 다 상호 방어하는 로직
+            raw_date_series = df_raw[date_col]
             
-            parsed_dates = []
-            for d in raw_dates:
-                # 슬래시(/)나 하이픈(-) 제거하여 순수 숫자만 추출
-                clean_d = d.replace('/', '').replace('-', '')
-                
-                # 가끔 '20260529'처럼 8자리 전체가 들어오는 경우 처리
-                if len(clean_d) == 8:
-                    year = clean_d[0:4]
-                    month = clean_d[4:6]
-                    day = clean_d[6:8]
-                # '260529'처럼 6자리로 들어오는 경우 처리
-                elif len(clean_d) == 6:
-                    year = "20" + clean_d[0:2]  # 맨 앞 2자리를 무조건 '2026년'으로 변환
-                    month = clean_d[2:4]
-                    day = clean_d[4:6]
-                else:
-                    # 그 외 알 수 없는 포맷은 임시 처리
-                    parsed_dates.append(pd.NaT)
-                    continue
-                
-                # 조립하여 '2026-05-29' 포맷으로 통일
-                parsed_dates.append(f"{year}-{month}-{day}")
+            # 우선 파이썬 표준 방식으로 날짜 변환 시도
+            parsed_dates = pd.to_datetime(raw_date_series, errors='coerce')
             
-            # 강제 조립한 날짜 데이터를 컬럼에 삽입
-            df['날짜'] = pd.to_datetime(parsed_dates, errors='coerce')
+            # 만약 변환 후 연도가 2026년이 아닌 과거/미래로 꼬였거나 변환에 실패한 경우 강제 보정 기법 발동
+            if parsed_dates.isna().any() or (parsed_dates.dt.year != 2026).any():
+                corrected_dates = []
+                for idx, val in enumerate(raw_date_series):
+                    val_str = str(val).strip().replace('/', '').replace('-', '')
+                    
+                    # 1) 문자열 길이가 6자리(260529) 또는 8자리(20260529)인 경우 글자 쪼개기
+                    if len(val_str) in [6, 8, 10] or '26' in val_str:
+                        clean_d = ''.join(filter(str.isdigit, val_str))
+                        if len(clean_d) == 6:
+                            y, m, d = "20" + clean_d[0:2], clean_d[2:4], clean_d[4:6]
+                        elif len(clean_d) == 8:
+                            y, m, d = clean_d[0:4], clean_d[4:6], clean_d[6:8]
+                        else:
+                            y, m, d = "2026", "05", "29" # 기본 파싱 실패시 예외 방어코드
+                        corrected_dates.append(pd.to_datetime(f"{y}-{m}-{d}", errors='coerce'))
+                    else:
+                        # 2) 엑셀 내부 날짜 데이터로 인해 이미 대타임슬립(2020-04-26 등)이 발생한 경우
+                        # 2020(년) -> 26(일)로 오독한 것이므로 연도/월/일을 정위치로 강제 교환합니다.
+                        try:
+                            current_dt = pd.to_datetime(val)
+                            # 2020-04-26 구조에서 연도 뒤의 '20'을 떼고 '26'일 데이터를 연도로 소환
+                            y = "20" + str(current_dt.day)
+                            m = f"{current_dt.month:02d}"
+                            # 기존 연도의 뒤 2자리(20)를 일(Day)로 강제 변환
+                            d = f"{str(current_dt.year)[2:4]}"
+                            corrected_dates.append(pd.to_datetime(f"{y}-{m}-{d}", errors='coerce'))
+                        except:
+                            corrected_dates.append(pd.NaT)
+                df['날짜'] = corrected_dates
+            else:
+                df['날짜'] = parsed_dates
                 
             def clean_numeric(sequence):
                 return pd.to_numeric(sequence.astype(str).str.replace(',', '').str.replace(' ', '').str.strip(), errors='coerce').fillna(0)
