@@ -52,7 +52,7 @@ SERVER_STORE_DIR = "stored_stocks"
 if not os.path.exists(SERVER_STORE_DIR):
     os.makedirs(SERVER_STORE_DIR)
 
-# 2. 사이드바 - 파일 업로드 및 서버 저장 관리
+# 2. 사이드바 - 파일 업로드 및 서버 저장 관리 (💡 세션 브레이크로 무한 뺑글이 완전 차단)
 st.sidebar.header("📂 [PC용] HTS 수급 데이터 서버 업로드")
 uploaded_files = st.sidebar.file_uploader(
     "새로운 주도주 엑셀/CSV 자료를 서버에 등록하세요:", 
@@ -60,13 +60,24 @@ uploaded_files = st.sidebar.file_uploader(
     accept_multiple_files=True
 )
 
+# 이미 처리 완료된 파일명을 기억할 세션 주머니 개설
+if "processed_files" not in st.session_state:
+    st.session_state.processed_files = set()
+
 if uploaded_files:
+    needs_rerun = False
     for f in uploaded_files:
-        file_path = os.path.join(SERVER_STORE_DIR, f.name)
-        with open(file_path, "wb") as buffer:
-            buffer.write(f.getbuffer())
-    st.sidebar.success("✅ 선택한 파일들이 서버 저장소에 안전하게 보관되었습니다!")
-    st.rerun()
+        # 업로드 창에 파일이 머물러 있어도, 이미 저장한 파일은 중복 저장 및 새로고침을 무시함
+        if f.name not in st.session_state.processed_files:
+            file_path = os.path.join(SERVER_STORE_DIR, f.name)
+            with open(file_path, "wb") as buffer:
+                buffer.write(f.getbuffer())
+            st.session_state.processed_files.add(f.name)
+            needs_rerun = True  # 딱 한 번만 화면을 갱신하도록 트리거 ON
+            
+    if needs_rerun:
+        st.sidebar.success("✅ 새로운 파일들이 서버 저장소에 안전하게 보관되었습니다!")
+        st.rerun()
 
 # 3. 📱 [모바일/PC 공용] 서버에 보관된 전체 목록 가져오기 및 자료 검색
 server_files = sorted([fname for fname in os.listdir(SERVER_STORE_DIR) if fname.endswith(('.xlsx', '.csv'))])
@@ -86,6 +97,8 @@ if server_files:
     if st.sidebar.button(f"🗑️ 현재 종목({selected_file_name}) 서버에서 삭제"):
         if os.path.exists(target_file_path):
             os.remove(target_file_path)
+            # 파일 삭제 시 세션 주머니에서도 제거하여 동기화
+            st.session_state.processed_files.discard(selected_file_name)
             st.rerun()
 
     try:
@@ -225,17 +238,17 @@ if server_files:
                     estimated_cycle = int(len(df) / sign_changes)
                     st.success(f"⏱️ **평균 순환매 사이클**: 약 **{max(3, estimated_cycle)}일 ~ {estimated_cycle + 2}일** 내외")
 
-            # 4. 🛠️ 하단 원본 데이터 표 출력 (HTML 융단폭격으로 이중 스크롤 100% 완전 박멸)
+            # 4. 🛠️ 하단 원본 데이터 표 출력 (순수 HTML 변환 기법으로 내부 이중 스크롤 100% 완전 박멸)
             st.write("---")
             st.subheader(f"📋 데이터 시트 ({selected_file_name})")
             
-            # 테이블 가독성을 위해 데이터프레임 복사 및 가공 (try 블록 내부의 올바른 들여쓰기 위치 유지)
+            # 테이블 전용 가공 데이터프레임 빌드 (try 블록 내부 정밀 인덴트 유지)
             display_df = df[['종가', '외인', '외인 누적수급', '기관', '기관 누적수급', '개인', '개인 누적수급']].copy()
             display_df.index = df['날짜'].dt.strftime('%Y-%m-%d')
             
             reversed_df = display_df.iloc[::-1]
 
-            # 웹 및 스마트폰 화면 가로폭에 100% 대응하며 이중 스크롤을 완전히 없애는 순수 HTML/CSS 마킹 스타일
+            # 스마트폰 화면 폭에 부드럽게 유동적으로 맞추며 내부 스크롤을 원천 봉쇄하는 인라인 CSS 스타일 스타일링
             html_style = """
             <style>
                 .pure-scroll-table {
@@ -255,7 +268,7 @@ if server_files:
                     font-weight: 600;
                 }
                 .pure-scroll-table th:first-child, .pure-scroll-table td:first-child {
-                    text-align: center; /* 날짜 열 정렬 */
+                    text-align: center;
                     font-weight: bold;
                     color: #4A5568;
                 }
@@ -266,9 +279,9 @@ if server_files:
                     color: #1A202C;
                 }
                 .pure-scroll-table tr:hover {
-                    background-color: #F1F5F9; /* 마우스 오버 시 가독성 효과 */
+                    background-color: #F1F5F9;
                 }
-                /* 🟢 양수(+) 매수 우위 구간 파스텔 연두색 하이라이트 */
+                /* 🟢 순매수 유입 자리에 선배님이 원하시는 은은한 파스텔 연두색 불기둥 효과 */
                 .pos-green-bg {
                     background-color: #E8F5E9 !important;
                     color: #1B5E20 !important;
@@ -277,7 +290,7 @@ if server_files:
             </style>
             """
 
-            # 동적 HTML 테이블 body 빌드
+            # 동적 순수 HTML 테이블 구조 작성
             table_html = '<table class="pure-scroll-table"><thead><tr><th>날짜</th>'
             for col in reversed_df.columns:
                 table_html += f'<th>{col}</th>'
@@ -287,7 +300,7 @@ if server_files:
                 table_html += f'<tr><td>{date_idx}</td>'
                 for col in reversed_df.columns:
                     val = row[col]
-                    # 수치형 변환 후 천단위 콤마 포맷팅 적용 및 양수 판단
+                    # 수치형 변환 후 천단위 콤마 포맷팅 처리 및 순매수(양수) 감지
                     try:
                         numeric_val = float(val)
                         formatted_val = f"{numeric_val:,.0f}"
@@ -303,7 +316,7 @@ if server_files:
                 table_html += '</tr>'
             table_html += '</tbody></table>'
 
-            # 💥 완벽하게 이중 스크롤을 무력화하여 웹페이지 전체 통스크롤로 결합 렌더링
+            # 컴포넌트 프레임 대신 순수 마크다운으로 결합 투사하여 통스크롤 완결
             st.markdown(html_style + table_html, unsafe_allow_html=True)
             
     except Exception as e:
