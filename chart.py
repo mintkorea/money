@@ -50,16 +50,34 @@ if uploaded_file is not None:
         else:
             df = pd.DataFrame()
             
-            # 💡 [핵심 수술] '26/05/29 또는 26-05-29 형태의 한국 HTS 날짜 포맷 강제 보정
-            date_strings = df_raw[date_col].astype(str).str.replace(' ', '').str.strip()
+            # 💡 [긴급 수술] 파이썬의 자동 날짜 해석을 전면 차단하고, 글자를 강제로 쪼개서 년/월/일 조립
+            raw_dates = df_raw[date_col].astype(str).str.replace(' ', '').str.strip()
             
-            # 파이썬 오작동을 막기 위해 YY/MM/DD 또는 YY-MM-DD 포맷을 명시적으로 지정하여 파싱
-            df['날짜'] = pd.to_datetime(date_strings, format='%y/%m/%d', errors='coerce')
-            if df['날짜'].isna().all():
-                df['날짜'] = pd.to_datetime(date_strings, format='%y-%m-%d', errors='coerce')
-            if df['날짜'].isna().all():
-                # 위 방식이 다 실패할 경우를 대비한 범용 예외 처리
-                df['날짜'] = pd.to_datetime(date_strings, errors='coerce')
+            parsed_dates = []
+            for d in raw_dates:
+                # 슬래시(/)나 하이픈(-) 제거하여 순수 숫자만 추출
+                clean_d = d.replace('/', '').replace('-', '')
+                
+                # 가끔 '20260529'처럼 8자리 전체가 들어오는 경우 처리
+                if len(clean_d) == 8:
+                    year = clean_d[0:4]
+                    month = clean_d[4:6]
+                    day = clean_d[6:8]
+                # '260529'처럼 6자리로 들어오는 경우 처리
+                elif len(clean_d) == 6:
+                    year = "20" + clean_d[0:2]  # 맨 앞 2자리를 무조건 '2026년'으로 변환
+                    month = clean_d[2:4]
+                    day = clean_d[4:6]
+                else:
+                    # 그 외 알 수 없는 포맷은 임시 처리
+                    parsed_dates.append(pd.NaT)
+                    continue
+                
+                # 조립하여 '2026-05-29' 포맷으로 통일
+                parsed_dates.append(f"{year}-{month}-{day}")
+            
+            # 강제 조립한 날짜 데이터를 컬럼에 삽입
+            df['날짜'] = pd.to_datetime(parsed_dates, errors='coerce')
                 
             def clean_numeric(sequence):
                 return pd.to_numeric(sequence.astype(str).str.replace(',', '').str.replace(' ', '').str.strip(), errors='coerce').fillna(0)
@@ -77,7 +95,7 @@ if uploaded_file is not None:
             df['기관 누적수급'] = df['기관'].cumsum()
             df['개인 누적수급'] = df['개인'].cumsum()
             
-            # 💡 차트 X축에 '05/29' 형태로 '월/일'이 깨끗하게 찍히도록 텍스트 변환
+            # 차트 X축용 '월/일' 텍스트 변환
             df['일자표시'] = df['날짜'].dt.strftime('%m/%d')
             
             # 3. 레이아웃 배치
@@ -143,10 +161,10 @@ if uploaded_file is not None:
 
             # 4. 하단 원본 데이터 표 출력
             st.write("---")
-            st.subheader("📋 분석에 사용된 데이터 시트 (일 단위 검증 완료)")
+            st.subheader("📋 분석에 사용된 데이터 시트 (일 단위 강제 검증 완료)")
             display_df = df[['종가', '외인', '기관', '개인']].copy()
             display_df.index = df['날짜'].dt.strftime('%Y-%m-%d')
-            st.dataframe(display_df.tail(29).style.format("{:,.0f}"))
+            st.dataframe(display_df.style.format("{:,.0f}"))
             
     except Exception as e:
         st.error(f"❌ 데이터 정제 중 오류가 발생했습니다: {e}")
